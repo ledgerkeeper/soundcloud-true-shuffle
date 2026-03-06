@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SoundCloud Shuffle+</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="popup-shell">
+    <section class="hero-card">
+      <div class="hero-brand">
+        <div class="hero-mark" aria-hidden="true"></div>
+        <div>
+          <div class="hero-title">SoundCloud Shuffle+</div>
+          <div class="hero-subtitle">Native queue control</div>
+        </div>
+      </div>
+      <div class="hero-state">
+        <div class="state-pill" id="state-pill" data-active="false">Idle</div>
+        <button class="toolbar-btn toolbar-btn--danger" id="stop-shuffle" type="button">Stop</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Start Shuffle</div>
+          <div class="panel-caption" id="context-caption">Reading current SoundCloud page...</div>
+        </div>
+      </div>
+      <div class="action-grid" id="context-actions"></div>
+      <div id="status" class="status status--info" aria-live="polite">Ready</div>
+    </section>
+
+    <section class="panel queue-panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Now Playing</div>
+          <div class="panel-caption" id="now-playing-caption">No active track</div>
+        </div>
+      </div>
+      <div class="queue-current" id="queue-current"></div>
+      <div class="queue-empty" id="queue-current-empty">No active queue item.</div>
+    </section>
+
+    <section class="panel queue-panel">
+      <div class="panel-head">
+        <div>
+          <div class="panel-title">Up Next</div>
+          <div class="panel-caption" id="queue-caption">No queue yet</div>
+        </div>
+      </div>
+      <div class="queue-list" id="queue-list"></div>
+      <div class="queue-empty" id="queue-empty">Start a shuffle to see the next tracks here.</div>
+    </section>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

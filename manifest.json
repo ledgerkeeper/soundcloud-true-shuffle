@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "SoundCloud Full Shuffle+",
+  "version": "2.0.0",
+  "description": "True native shuffle for full collections using internal SC API.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "cookies",
+    "webNavigation",
+    "scripting",
+    "webRequest"
+  ],
+  "host_permissions": [
+    "*://soundcloud.com/*",
+    "*://api-v2.soundcloud.com/*",
+    "*://a-v2.sndcdn.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/inject.js"
+      ],
+      "matches": [
+        "*://soundcloud.com/*"
+      ]
+    }
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "SC Shuffle Control"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://soundcloud.com/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
+      "run_at": "document_end"
+    }
+  ]
+}
