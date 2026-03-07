@@ -1,4 +1,4 @@
-# SoundCloud True Shuffle +
+# SoundCloud True Shuffle Extension
 
 **Are you tired of bad quality Soundcloud shuffle?**
 

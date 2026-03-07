@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SoundCloud Full Shuffle+",
+  "name": "SoundCloud True Shuffle+",
   "version": "1.0.0",
   "description": "True native shuffle for full collections using internal SC API.",
   "icons": {
