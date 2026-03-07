@@ -1,4 +1,4 @@
-# SoundCloud Full Shuffle+
+# SoundCloud True Shuffle +
 
 **Are you tired of bad quality Soundcloud shuffle?**
 
