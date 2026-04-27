@@ -6,6 +6,21 @@ Instead of shuffling only the tracks currently rendered in the page, it fetches 
 
 ![Popup screenshot](docs/screenshots/popup.png)
 
+## Installation
+
+No build step is required for normal use because browser-loadable JavaScript is committed beside the TypeScript sources.
+
+### Option 1: Download from Releases
+
+1. Clone the repository or download from Releases page:
+   ```bash
+   git clone https://github.com/ledgerkeeper/soundcloud-true-shuffle.git
+   ```
+2. Open `chrome://extensions/` or `yourbrowser://extensions/`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked**.
+5. Select the cloned `soundcloud-true-shuffle` folder.
+
 ## Features
 
 - Full shuffle for large SoundCloud collections.
@@ -35,21 +50,6 @@ Instead of shuffling only the tracks currently rendered in the page, it fetches 
 5. The popup shows the current item and the next upcoming queue entries.
 
 The real playback queue stays inside the extension. SoundCloud remains the playback surface.
-
-## Installation
-
-No build step is required for normal use because browser-loadable JavaScript is committed beside the TypeScript sources.
-
-### Option 1: Download from Releases
-
-1. Clone the repository or download from Releases page:
-   ```bash
-   git clone https://github.com/ledgerkeeper/soundcloud-true-shuffle.git
-   ```
-2. Open `chrome://extensions/` or `yourbrowser://extensions/`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked**.
-5. Select the cloned `soundcloud-true-shuffle` folder.
 
 ## Development
 
