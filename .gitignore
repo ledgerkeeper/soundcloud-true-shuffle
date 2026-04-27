@@ -4,5 +4,11 @@ Thumbs.db
 output/
 playwright-report/
 test-results/
+node_modules/
+dist/
+.codex
+.codex/
+.omx
+.omx/
 *_files/
 * by *.html

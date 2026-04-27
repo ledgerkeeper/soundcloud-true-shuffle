@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "SoundCloud True Shuffle+",
-  "version": "1.0.0",
+  "name": "SoundCloud True Shuffle",
+  "version": "1.1.0",
   "description": "True native shuffle for full collections using internal SC API.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -35,7 +35,7 @@
   },
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "SC Shuffle Control"
+    "default_title": "SoundCloud True Shuffle"
   },
   "content_scripts": [
     {

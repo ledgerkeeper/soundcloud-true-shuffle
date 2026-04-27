@@ -1,8 +1,6 @@
-# SoundCloud True Shuffle Extension
+# SoundCloud True Shuffle
 
-**Are you tired of bad quality Soundcloud shuffle?**
-
-Chrome/Edge extension that adds a real full-library shuffle to SoundCloud.
+**A Chromium-based browser extension that adds real full-collection shuffle to SoundCloud.**
 
 Instead of shuffling only the tracks currently rendered in the page, it fetches the full track set from SoundCloud's internal API, builds its own queue, and drives playback through the native SoundCloud player UI.
 
@@ -40,11 +38,27 @@ The real playback queue stays inside the extension. SoundCloud remains the playb
 
 ## Installation
 
-1. Clone or download this repository.
-2. Open `chrome://extensions/` or `edge://extensions/`.
+No build step is required for normal use because browser-loadable JavaScript is committed beside the TypeScript sources.
+
+### Option 1: Download from Releases
+
+1. Clone the repository or download from Releases page:
+   ```bash
+   git clone https://github.com/ledgerkeeper/soundcloud-true-shuffle.git
+   ```
+2. Open `chrome://extensions/` or `yourbrowser://extensions/`.
 3. Enable **Developer mode**.
 4. Click **Load unpacked**.
-5. Select the project root folder.
+5. Select the cloned `soundcloud-true-shuffle` folder.
+
+## Development
+
+- Install dependencies with `pnpm install`.
+- `pnpm run check` type-checks the TypeScript sources.
+- `pnpm run build` compiles sources, refreshes root `src/*.js`, and copies extension assets to `dist/`.
+- `pnpm run check:dist` verifies that root and `dist/` manifest references exist.
+
+If you edit TypeScript files, run `pnpm run build` and commit the refreshed generated JavaScript too. The generated `dist/` folder is ignored; the committed root `src/*.js` files are what make clone-and-load work.
 
 ## Usage
 

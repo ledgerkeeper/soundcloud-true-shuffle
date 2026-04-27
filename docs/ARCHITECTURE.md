@@ -1,8 +1,8 @@
-# SoundCloud Full Shuffle+ Architecture
+# SoundCloud True Shuffle Architecture
 
 ## Overview
 
-SoundCloud Full Shuffle+ keeps its own playback queue and uses SoundCloud's native player UI as the playback surface.
+SoundCloud True Shuffle keeps its own playback queue and uses SoundCloud's native player UI as the playback surface.
 
 The extension does not build a custom audio player. Instead, it:
 
@@ -15,7 +15,7 @@ The extension does not build a custom audio player. Instead, it:
 
 ### Background Service Worker
 
-`src/background.js` is the source of truth.
+`src/background.ts` is the source of truth and compiles to `dist/src/background.js`.
 
 It is responsible for:
 
@@ -31,7 +31,7 @@ Queue state is persisted to `chrome.storage.local` so it survives MV3 worker unl
 
 ### Content Script
 
-`src/content.js` runs in SoundCloud tabs.
+`src/content.ts` compiles to `dist/src/content.js` and runs in SoundCloud tabs.
 
 It is responsible for:
 
@@ -45,7 +45,7 @@ Only the active controller tab is allowed to drive queue progression.
 
 ### Injected Main-World Bridge
 
-`src/inject.js` runs in the page context.
+`src/inject.ts` compiles to `dist/src/inject.js` and runs in the page context.
 
 It is used for:
 
