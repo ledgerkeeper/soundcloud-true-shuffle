@@ -36,7 +36,6 @@ const contextActionsEl = document.getElementById("context-actions") as HTMLEleme
 const contextCaptionEl = document.getElementById("context-caption") as HTMLElement;
 const nowPlayingCaptionEl = document.getElementById("now-playing-caption") as HTMLElement;
 const queueCurrentEl = document.getElementById("queue-current") as HTMLElement;
-const queueCurrentEmptyEl = document.getElementById("queue-current-empty") as HTMLElement;
 const queueCaptionEl = document.getElementById("queue-caption") as HTMLElement;
 const queueListEl = document.getElementById("queue-list") as HTMLElement;
 const queueEmptyEl = document.getElementById("queue-empty") as HTMLElement;
@@ -209,18 +208,19 @@ function renderQueue(queueState: QueueState | null) {
   const remainingCount = Number.isFinite(queueState?.remainingCount) ? queueState.remainingCount : upNextEntries.length;
 
   if (currentEntry) {
-    queueCurrentEmptyEl.style.display = "none";
     queueCurrentEl.replaceChildren(createCurrentItem(currentEntry));
     nowPlayingCaptionEl.textContent = currentEntry.artist || currentEntry.url || "Active track";
   } else {
     queueCurrentEl.replaceChildren();
-    queueCurrentEmptyEl.style.display = "block";
     nowPlayingCaptionEl.textContent = "No active track";
   }
 
   if (!upNextEntries.length) {
     queueListEl.replaceChildren();
     queueEmptyEl.style.display = "block";
+    queueEmptyEl.textContent = currentEntry
+      ? "No upcoming tracks."
+      : "Start a shuffle to see the next tracks here.";
     queueCaptionEl.textContent = currentEntry ? "No upcoming tracks" : "No queue yet";
     return;
   }
@@ -228,6 +228,20 @@ function renderQueue(queueState: QueueState | null) {
   queueEmptyEl.style.display = "none";
   queueCaptionEl.textContent = `${remainingCount} ahead · showing next ${upNextEntries.length}`;
   queueListEl.replaceChildren(...upNextEntries.map(createQueueItem));
+}
+
+// Top-level paths that are SoundCloud app pages, not user profiles.
+// Must stay in sync with the list in content.ts.
+const RESERVED_TOP_SLUGS = new Set([
+  "you", "feed", "discover", "stream", "home", "search", "upload", "messages",
+  "notifications", "settings", "people", "charts", "mobile", "pro", "premium",
+  "pages", "tags", "popular", "stations", "jobs", "imprint", "terms-of-use",
+  "logout", "signin", "signout", "connect", "activity", "for-artists",
+  "artist-plans", "library", "apps", "help", "legal", "community-guidelines",
+]);
+
+function isLikelyUsername(slug: string) {
+  return !!slug && !RESERVED_TOP_SLUGS.has(slug);
 }
 
 function resolveContextActions(url: string | null): ContextAction[] {
@@ -244,6 +258,9 @@ function resolveContextActions(url: string | null): ContextAction[] {
 
   const path = parsed.pathname.toLowerCase();
   const parts = path.split("/").filter(Boolean);
+  const first = parts[0] || "";
+  const isYouSection = first === "you";
+  const ownerLike = isYouSection || isLikelyUsername(first);
   const actions = [];
 
   actions.push({
@@ -252,7 +269,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
     run: async (tabId) => sendRuntimeMessage({ type: "START_SHUFFLE_LIKES", tabId }),
   });
 
-  if (/\/likes\/?$/.test(path)) {
+  if (ownerLike && parts.length === 2 && parts[1] === "likes") {
     actions.unshift({
       label: "This Likes Page",
       meta: "Shuffle current likes page",
@@ -263,7 +280,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
         tabId,
       }),
     });
-  } else if (/\/reposts\/?$/.test(path)) {
+  } else if (ownerLike && parts.length === 2 && parts[1] === "reposts") {
     actions.unshift({
       label: "This Reposts Page",
       meta: "Shuffle reposts from this profile",
@@ -274,7 +291,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
         tabId,
       }),
     });
-  } else if (/\/tracks\/?$/.test(path)) {
+  } else if (ownerLike && parts.length === 2 && parts[1] === "tracks") {
     actions.unshift({
       label: "This Tracks Page",
       meta: "Shuffle tracks from this profile",
@@ -285,7 +302,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
         tabId,
       }),
     });
-  } else if (path.includes("/sets/") && !/\/sets\/?$/.test(path)) {
+  } else if (!isYouSection && isLikelyUsername(first) && parts.length >= 3 && parts[1] === "sets") {
     actions.unshift({
       label: "This Playlist",
       meta: "Shuffle current playlist",
@@ -295,7 +312,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
         tabId,
       }),
     });
-  } else if (/\/sets\/?$/.test(path)) {
+  } else if (ownerLike && parts.length === 2 && parts[1] === "sets") {
     actions.unshift({
       label: "All Playlists",
       meta: "Shuffle tracks from all playlists",
@@ -305,7 +322,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
         tabId,
       }),
     });
-  } else if (parts.length === 1) {
+  } else if (!isYouSection && isLikelyUsername(first) && parts.length === 1) {
     actions.unshift({
       label: "Profile Mix",
       meta: "Tracks + reposts from this profile",

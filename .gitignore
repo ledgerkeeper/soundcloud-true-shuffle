@@ -10,5 +10,6 @@ dist/
 .codex/
 .omx
 .omx/
+.claude/
 *_files/
 * by *.html

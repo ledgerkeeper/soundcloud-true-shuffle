@@ -163,9 +163,9 @@ function ensureGlassStyles() {
       transform: translateY(1px) !important;
     }
     .sc-shuffle-skip {
-      width: 34px !important;
-      height: 34px !important;
-      min-width: 34px !important;
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
       padding: 0 !important;
       display: inline-flex !important;
       align-items: center !important;
@@ -187,9 +187,9 @@ function ensureGlassStyles() {
       line-height: 1 !important;
     }
     .sc-shuffle-footer-btn {
-      width: 32px !important;
-      height: 32px !important;
-      min-width: 32px !important;
+      width: 36px !important;
+      height: 36px !important;
+      min-width: 36px !important;
       border-radius: 999px !important;
       border: 1px solid rgba(18, 18, 18, 0.12) !important;
       background: rgba(255, 255, 255, 0.7) !important;
@@ -211,11 +211,27 @@ function ensureGlassStyles() {
       background: rgba(255, 85, 0, 0.14) !important;
     }
     #sc-shuffle-fallback-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin: 12px 16px;
-      align-items: center;
+      position: fixed !important;
+      top: 60px !important;
+      right: 24px !important;
+      z-index: 2147483000 !important;
+      display: flex !important;
+      gap: 8px !important;
+      align-items: center !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      pointer-events: none !important;
+    }
+    #sc-shuffle-fallback-actions .sc-shuffle-glass {
+      pointer-events: auto !important;
+      margin-left: 0 !important;
+      height: 36px !important;
+      padding: 0 16px !important;
+      font-size: 13px !important;
+      font-weight: 600 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      cursor: pointer !important;
     }
   `;
   (document.head || document.documentElement).appendChild(style);
@@ -1235,6 +1251,20 @@ function createHeroButton(id, text, onClick) {
   return btn;
 }
 
+// Top-level paths that are SoundCloud app pages, not user profiles.
+// Injecting shuffle buttons there broke the header on /feed, /people, /you/*, etc.
+const RESERVED_TOP_SLUGS = new Set([
+  "you", "feed", "discover", "stream", "home", "search", "upload", "messages",
+  "notifications", "settings", "people", "charts", "mobile", "pro", "premium",
+  "pages", "tags", "popular", "stations", "jobs", "imprint", "terms-of-use",
+  "logout", "signin", "signout", "connect", "activity", "for-artists",
+  "artist-plans", "library", "apps", "help", "legal", "community-guidelines",
+]);
+
+function isLikelyUsername(slug) {
+  return !!slug && !RESERVED_TOP_SLUGS.has(slug);
+}
+
 const HERO_BUTTON_IDS = [
   "sc-shuffle-likes-hero",
   "sc-shuffle-all-hero",
@@ -1270,12 +1300,18 @@ function getHeroActionsContainer() {
 }
 
 function getShareButton() {
-  return (
+  const btn =
     document.querySelector("button.sc-button-share") ||
     document.querySelector('button[aria-label="Share"]') ||
     document.querySelector('button[title="Share"]') ||
-    null
-  );
+    null;
+  if (!btn) return null;
+  // Only anchor to a page-level share button (profile/playlist header).
+  // Share buttons inside track rows would place our button mid-list.
+  if (btn.closest("li, .sound, .soundList__item, .searchList__item, .trackItem, .playControls")) {
+    return null;
+  }
+  return btn;
 }
 
 function ensureFallbackActionsContainer() {
@@ -1283,27 +1319,27 @@ function ensureFallbackActionsContainer() {
   if (el) return el;
   el = document.createElement("div");
   el.id = "sc-shuffle-fallback-actions";
-  el.style.position = "sticky";
-  el.style.top = "52px";
-  el.style.zIndex = "5";
-  el.style.justifyContent = "flex-start";
-  document.body.insertBefore(el, document.body.firstChild);
+  // Fixed overlay: must never participate in page layout, otherwise it
+  // pushes SoundCloud's header down (seen on /you/likes, /you/sets, /feed).
+  document.body.appendChild(el);
   return el;
 }
 
 function ensureHeroButtons() {
   const path = (location.pathname || "").toLowerCase();
-  
-  const isPlaylistsTab = /\/sets\/?$/.test(path);
-  const isPlaylist = path.includes("/sets/") && !isPlaylistsTab;
-  const isLikes = /\/likes\/?$/.test(path);
-  const isReposts = /\/reposts\/?$/.test(path);
-  
-  // Logic to detect if we are on a user's main track list
-  // e.g., /username or /username/tracks
   const parts = path.split("/").filter(Boolean);
-  const isProfileRoot = !isLikes && !isReposts && !isPlaylist && !isPlaylistsTab && parts.length === 1;
-  const isTracksTab = parts.length >= 2 && parts[1] === "tracks";
+  const first = parts[0] || "";
+
+  // "/you/..." is the logged-in library; background resolves it via /me.
+  const isYouSection = first === "you";
+  const ownerLike = isYouSection || isLikelyUsername(first);
+
+  const isPlaylistsTab = ownerLike && parts.length === 2 && parts[1] === "sets";
+  const isPlaylist = !isYouSection && isLikelyUsername(first) && parts.length >= 3 && parts[1] === "sets";
+  const isLikes = ownerLike && parts.length === 2 && parts[1] === "likes";
+  const isReposts = ownerLike && parts.length === 2 && parts[1] === "reposts";
+  const isTracksTab = ownerLike && parts.length === 2 && parts[1] === "tracks";
+  const isProfileRoot = !isYouSection && isLikelyUsername(first) && parts.length === 1;
 
   const shouldShowAny =
     isLikes || isProfileRoot || isReposts || isTracksTab || isPlaylistsTab || isPlaylist;

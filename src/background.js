@@ -969,6 +969,16 @@
                 `https://api-v2.soundcloud.com/users/${userId}/sets`,
             ], token, clientId);
             log("Playlists fetched", { endpoint: playlistsEndpoint, count: playlists.length });
+            // The /you/sets library page also lists playlists the user liked, so
+            // include those when shuffling from there. Failures are non-fatal.
+            const cleanUrl = String(request.url).split("?")[0];
+            if (cleanUrl.includes("/you/") || cleanUrl.endsWith("/you")) {
+                const likedPlaylists = await fetchAllTracks(`https://api-v2.soundcloud.com/users/${userId}/playlist_likes`, token, clientId).catch(() => []);
+                if (likedPlaylists.length) {
+                    log("Liked playlists merged", { count: likedPlaylists.length });
+                    playlists.push(...likedPlaylists.map((item) => item?.playlist || item));
+                }
+            }
             const playlistUris = playlists
                 .map(extractPlaylistApiUrl)
                 .filter((u) => typeof u === "string" && u.includes("api-v2.soundcloud.com/playlists/"));
