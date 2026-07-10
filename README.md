@@ -63,6 +63,19 @@ The real playback queue stays inside the extension. SoundCloud remains the playb
 
 If you edit TypeScript files, run `pnpm run build` and commit the refreshed generated JavaScript too. The generated `dist/` folder is ignored; the committed root `src/*.js` files are what make clone-and-load work.
 
+### Publishing a release
+
+1. Set the same version in `package.json` and `manifest.json` (for example `1.2.0`).
+2. Commit and push the release changes.
+3. Create and push the matching tag:
+
+   ```bash
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+
+After the tag passes CI, the release job builds `dist/`, creates `soundcloud-true-shuffle-v1.2.0-extension.zip` with the extension files at the archive root, generates a `.sha256` checksum, and publishes both files to the matching GitHub Release. The job fails instead of publishing if the tag and package version differ.
+
 ## Usage
 
 ### First Run

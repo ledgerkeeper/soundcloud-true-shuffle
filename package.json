@@ -1,6 +1,6 @@
 {
   "name": "soundcloud-true-shuffle",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "packageManager": "pnpm@11.3.0",
   "description": "Chrome/Edge extension that adds full-library shuffle to SoundCloud.",
