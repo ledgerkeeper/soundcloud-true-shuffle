@@ -2,12 +2,16 @@
   "name": "soundcloud-true-shuffle",
   "version": "1.1.0",
   "private": true,
+  "packageManager": "pnpm@11.3.0",
   "description": "Chrome/Edge extension that adds full-library shuffle to SoundCloud.",
   "scripts": {
     "clean": "node scripts/clean-dist.mjs",
     "build": "pnpm run clean && tsc --project tsconfig.json && node scripts/copy-static.mjs",
     "check": "tsc --project tsconfig.json --noEmit",
-    "check:dist": "node scripts/check-dist.mjs"
+    "check:generated": "node scripts/check-generated.mjs",
+    "check:dist": "node scripts/check-dist.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "verify": "pnpm test && pnpm run check && pnpm run check:generated && pnpm run build && pnpm run check:dist"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.290",

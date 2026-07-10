@@ -11,8 +11,6 @@
   "permissions": [
     "storage",
     "cookies",
-    "webNavigation",
-    "scripting",
     "webRequest"
   ],
   "host_permissions": [

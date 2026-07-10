@@ -27,4 +27,27 @@ const manifestReferences = [background, contentScript, popup, injected].filter(B
 await Promise.all(manifestReferences.map((file) => access(join("dist", file))));
 await Promise.all(manifestReferences.map((file) => access(file)));
 
-console.log(`root/dist ok: ${requiredFiles.length} required files and ${manifestReferences.length} manifest references found`);
+const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+const rootManifest = JSON.parse(await readFile("manifest.json", "utf8"));
+if (manifest.version !== packageJson.version || rootManifest.version !== packageJson.version) {
+  throw new Error(
+    `Version mismatch: package=${packageJson.version}, root manifest=${rootManifest.version}, dist manifest=${manifest.version}`
+  );
+}
+
+const contentMismatches = [];
+for (const file of requiredFiles) {
+  const [rootContent, distContent] = await Promise.all([
+    readFile(file),
+    readFile(join("dist", file)),
+  ]);
+  if (!rootContent.equals(distContent)) contentMismatches.push(file);
+}
+if (contentMismatches.length) {
+  throw new Error(`Root/dist content mismatch: ${contentMismatches.join(", ")}`);
+}
+
+console.log(
+  `root/dist ok: ${requiredFiles.length} identical required files, ` +
+  `${manifestReferences.length} manifest references, version ${packageJson.version}`
+);

@@ -5,8 +5,13 @@ const LOG_PREFIX = "[SC True Shuffle Listener]";
 let showToastTimer = 0;
 let ensurePlayingLastKickAt = 0;
 let timelineEndSeekWatcherBound = false;
+let observerMaintenanceFrame = 0;
 
-function log(...args) {
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function log(...args: unknown[]) {
   console.log(LOG_PREFIX, ...args);
 }
 
@@ -16,7 +21,7 @@ const shuffleRuntime = {
   lastStatusAt: 0,
 };
 
-function updateRuntimeFromStatus(status) {
+function updateRuntimeFromStatus(status: ShuffleStateMessage | RuntimeResponse | null | undefined) {
   if (status && typeof status.isShuffling === "boolean") {
     const isActiveTab = status.isActiveTab !== false;
     shuffleRuntime.isActiveTab = isActiveTab;
@@ -45,25 +50,25 @@ function refreshStatus() {
   });
 }
 
-function safeSendMessage(message, callback) {
+function safeSendMessage(message: RuntimeRequest, callback: (response?: RuntimeResponse) => void) {
   try {
     chrome.runtime.sendMessage(message, callback);
     return true;
   } catch (e) {
-    log("chrome.runtime.sendMessage threw:", e?.message || e);
+    log("chrome.runtime.sendMessage threw:", errorMessage(e));
     showToast("Extension reloaded. Refresh the tab.", true);
     return false;
   }
 }
 
-function sendToBackground(message) {
+function sendToBackground(message: RuntimeRequest) {
   safeSendMessage(message, () => {
     const err = chrome.runtime.lastError;
     if (err) log("sendMessage failed:", err.message || err);
   });
 }
 
-function showToast(text, isError = false) {
+function showToast(text: string, isError = false) {
   ensureGlassStyles();
   let toast = document.getElementById("sc-shuffle-toast");
   if (!toast) {
@@ -100,7 +105,7 @@ function showToast(text, isError = false) {
   }, 4500);
 }
 
-function sendToBackgroundWithResult(message, actionLabel) {
+function sendToBackgroundWithResult(message: RuntimeRequest, actionLabel: string) {
   showToast(actionLabel || "Working...");
   safeSendMessage(message, (resp) => {
     const err = chrome.runtime.lastError;
@@ -246,7 +251,7 @@ function ensureGlassStyles() {
   (document.head || document.documentElement).appendChild(script);
 })();
 
-function urlsRoughlyMatch(a, b) {
+function urlsRoughlyMatch(a: string, b: string) {
   try {
     const ua = new URL(a, location.origin);
     const ub = new URL(b, location.origin);
@@ -256,28 +261,9 @@ function urlsRoughlyMatch(a, b) {
   }
 }
 
-function waitForTrackToLoad(targetUrl, timeoutMs = 12000) {
+function waitForExpectedPageReady(targetUrl: string, timeoutMs = 1800) {
   const startedAt = Date.now();
-  return new Promise((resolve) => {
-    const tick = () => {
-      const href = getCurrentTrackHref();
-      if (href && urlsRoughlyMatch(href, targetUrl)) {
-        resolve(true);
-        return;
-      }
-      if (Date.now() - startedAt > timeoutMs) {
-        resolve(false);
-        return;
-      }
-      setTimeout(tick, 250);
-    };
-    tick();
-  });
-}
-
-function waitForExpectedPageReady(targetUrl, timeoutMs = 1800) {
-  const startedAt = Date.now();
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     const tick = () => {
       const pageMatches = urlsRoughlyMatch(location.href, targetUrl);
       const pageControl = getPagePlayButton(targetUrl);
@@ -297,7 +283,7 @@ function waitForExpectedPageReady(targetUrl, timeoutMs = 1800) {
   });
 }
 
-function isValidPagePlayButton(btn) {
+function isValidPagePlayButton(btn: Element | null) {
   if (!btn) return false;
   if (btn.closest(".playControls")) return false;
   if (btn.closest(".relatedSounds, .trackList, .soundList, [class*='queue'], [class*='related'], aside")) return false;
@@ -306,7 +292,7 @@ function isValidPagePlayButton(btn) {
   return true;
 }
 
-function isPlayStartButton(btn) {
+function isPlayStartButton(btn: Element | null) {
   if (!btn) return false;
   const label = `${btn.getAttribute("aria-label") || ""} ${btn.getAttribute("title") || ""}`.toLowerCase();
   const className = String(btn.className || "").toLowerCase();
@@ -317,7 +303,7 @@ function isPlayStartButton(btn) {
   return false;
 }
 
-function dispatchNativeClick(action, detail = null) {
+function dispatchNativeClick(action: string, detail: unknown = null) {
   try {
     window.dispatchEvent(new CustomEvent(action, { detail }));
     return true;
@@ -326,7 +312,7 @@ function dispatchNativeClick(action, detail = null) {
   }
 }
 
-function requestExpectedPagePlay(expectedUrl, source) {
+function requestExpectedPagePlay(expectedUrl: string, source: string) {
   state.lastAdvanceKickAt = Date.now();
   const pageBtn = getPagePlayButton(expectedUrl);
   const nativeRequested = dispatchNativeClick("SC_SHUFFLE_PAGE_PLAY", expectedUrl);
@@ -340,7 +326,7 @@ function requestExpectedPagePlay(expectedUrl, source) {
   return nativeRequested || !!pageBtn;
 }
 
-async function navigateAndPlay(url) {
+async function navigateAndPlay(url: string) {
   state.pendingAdvanceUntil = Math.max(state.pendingAdvanceUntil || 0, Date.now() + 6000);
   state.pendingExpectedUrl = url;
   const currentAudio = getAudioEl();
@@ -400,7 +386,7 @@ async function navigateAndPlay(url) {
   return true;
 }
 
-chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((req: RuntimeRequest, _sender, sendResponse) => {
   if (req?.action === "GET_CURRENT_CONTEXT") {
     sendResponse({ url: window.location.href });
   }
@@ -423,9 +409,11 @@ chrome.runtime.onMessage.addListener((req, _sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
     return true;
   }
+
+  return false;
 });
 
-function ensurePlayingOnce(expectedUrl) {
+function ensurePlayingOnce(expectedUrl: string | null | undefined) {
   const now = Date.now();
     const audio = getAudioEl();
   const audioPaused = audio ? audio.paused === true : null;
@@ -449,12 +437,6 @@ function ensurePlayingOnce(expectedUrl) {
   }
 
   const canKick = now - ensurePlayingLastKickAt > 1200;
-  const footerPlayLabel = (
-    footerBtn?.getAttribute("aria-label") ||
-    footerBtn?.getAttribute("title") ||
-    ""
-  ).toLowerCase();
-
   // If we're on the target page but the player is still on the previous track,
   // click the page's own Play button to load the current track into the player.
   if (expectedUrl && pageMatches && !playerOnExpected && canKick) {
@@ -487,11 +469,18 @@ function ensurePlayingOnce(expectedUrl) {
   return false;
 }
 
-function ensurePlayingWithRetry(expectedUrl, options: { attempts?: number; intervalMs?: number } = {}) {
-  const attempts = Number.isFinite(options?.attempts) ? Math.max(1, options.attempts) : 20;
-  const intervalMs = Number.isFinite(options?.intervalMs) ? Math.max(50, options.intervalMs) : 500;
+function ensurePlayingWithRetry(
+  expectedUrl: string | null | undefined,
+  options: { attempts?: number; intervalMs?: number } = {}
+) {
+  const attempts = typeof options.attempts === "number" && Number.isFinite(options.attempts)
+    ? Math.max(1, options.attempts)
+    : 20;
+  const intervalMs = typeof options.intervalMs === "number" && Number.isFinite(options.intervalMs)
+    ? Math.max(50, options.intervalMs)
+    : 500;
 
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     let attemptsLeft = attempts;
     const tick = () => {
       if (ensurePlayingOnce(expectedUrl)) {
@@ -509,7 +498,7 @@ function ensurePlayingWithRetry(expectedUrl, options: { attempts?: number; inter
   });
 }
 
-function getPagePlayButton(expectedUrl = null) {
+function getPagePlayButton(expectedUrl: string | null = null) {
   const targetUrl = expectedUrl || location.href;
 
   if (expectedUrl) {
@@ -629,7 +618,27 @@ function getPagePlayButton(expectedUrl = null) {
 // Note: We intentionally do not relay SC_SHUFFLE_NAVIGATE back to background.
 // Background drives navigation; relaying can create loops and resume the wrong track.
 
-const state = {
+type PlaybackDetectionState = {
+  lastUrl: string;
+  lastTrackHref: string | null;
+  lastAudioSrc: string | null;
+  endedReported: boolean;
+  lastProgress: number;
+  lastProgressAt: number;
+  nearEndSince: number | null;
+  manualSeekNearEndAt: number;
+  repeatSkipLoggedAt: number;
+  lastRepeatMode: string;
+  pendingAdvanceUntil: number;
+  pendingAdvanceUrl: string | null;
+  pendingExpectedUrl: string | null;
+  lastAdvanceSuppressionAt: number;
+  lastAdvanceKickAt: number;
+  boundAudioEl: HTMLAudioElement | null;
+  boundAudioOnEnded: (() => void) | null;
+};
+
+const state: PlaybackDetectionState = {
   lastUrl: location.href,
   lastTrackHref: null,
   lastAudioSrc: null,
@@ -651,7 +660,7 @@ const state = {
 
 // -------- Track-end detection --------
 
-function reportTrackFinished(reason, extra = null) {
+function reportTrackFinished(reason: string, extra: unknown = null) {
   if (!shuffleRuntime.isShuffling) return;
   if (state.endedReported) return;
 
@@ -745,7 +754,7 @@ function suppressUnexpectedPlaybackWhileAdvancing() {
   } catch {}
 }
 
-function parseTimeToSeconds(text) {
+function parseTimeToSeconds(text: string | null | undefined) {
   if (!text) return null;
   const parts = String(text).trim().split(":").map((p) => p.trim());
   if (!parts.length || parts.some((p) => p === "" || Number.isNaN(Number(p)))) return null;
@@ -876,7 +885,7 @@ function readProgress() {
     document.querySelector('.playbackTimeline__progressBar') ||
     document.querySelector('[role="progressbar"]');
 
-  let ratio = null;
+  let ratio: number | null = null;
   if (progressEl) {
     const nowAttr = progressEl.getAttribute("aria-valuenow");
     const maxAttr = progressEl.getAttribute("aria-valuemax");
@@ -892,7 +901,7 @@ function readProgress() {
   return ratio;
 }
 
-function isPlaying(btn) {
+function isPlaying(btn: Element | null | undefined) {
   if (!btn) return null;
   const aria = (btn.getAttribute("aria-label") || "").toLowerCase();
   if (aria.includes("pause")) return true;
@@ -900,14 +909,14 @@ function isPlaying(btn) {
   return null;
 }
 
-function isTimelineEventTarget(target) {
+function isTimelineEventTarget(target: EventTarget | null) {
   if (!(target instanceof Element)) return false;
   return !!target.closest(
     ".playbackTimeline, [class*='playbackTimeline'], [role='progressbar']"
   );
 }
 
-function scheduleManualSeekEndCheck(source) {
+function scheduleManualSeekEndCheck(source: string) {
   if (!shuffleRuntime.isShuffling) return;
 
   state.manualSeekNearEndAt = Date.now();
@@ -945,7 +954,7 @@ function scheduleManualSeekEndCheck(source) {
   setTimeout(tick, 40);
 }
 
-function evaluateEnd(source) {
+function evaluateEnd(source: string) {
   if (!shuffleRuntime.isShuffling) return;
   const now = Date.now();
   const prevProgressSnapshot = state.lastProgress;
@@ -1124,7 +1133,7 @@ function bindTimelineEndSeekWatcher() {
   if (timelineEndSeekWatcherBound) return;
   timelineEndSeekWatcherBound = true;
 
-  const onSeekInteraction = (event) => {
+  const onSeekInteraction = (event: Event) => {
     if (!shuffleRuntime.isShuffling) return;
     if (!isTimelineEventTarget(event.target)) return;
     scheduleManualSeekEndCheck(event.type);
@@ -1135,7 +1144,7 @@ function bindTimelineEndSeekWatcher() {
   document.addEventListener("touchend", onSeekInteraction, true);
 }
 
-const observer = new MutationObserver(() => {
+function runObserverMaintenance() {
   if (shuffleRuntime.isShuffling) {
     suppressUnexpectedPlaybackWhileAdvancing();
     bindAudioEndListener();
@@ -1143,6 +1152,18 @@ const observer = new MutationObserver(() => {
   }
   ensureFooterButtons();
   ensureHeroButtons();
+}
+
+function scheduleObserverMaintenance() {
+  if (observerMaintenanceFrame) return;
+  observerMaintenanceFrame = window.requestAnimationFrame(() => {
+    observerMaintenanceFrame = 0;
+    runObserverMaintenance();
+  });
+}
+
+const observer = new MutationObserver(() => {
+  scheduleObserverMaintenance();
 });
 
 function startObservers() {
@@ -1170,7 +1191,7 @@ setInterval(() => {
 
 // -------- UI Injection: footer controls --------
 
-function createIconButton(id, label, title, onClick) {
+function createIconButton(id: string, label: string, title: string, onClick: () => void) {
   const btn = document.createElement("button");
   btn.id = id;
   btn.className = "sc-button-icon sc-button-medium sc-shuffle-glass-icon sc-shuffle-skip sc-shuffle-footer-btn";
@@ -1240,7 +1261,7 @@ function ensureFooterButtons() {
 
 // -------- UI Injection: hero buttons on likes/playlist pages --------
 
-function createHeroButton(id, text, onClick) {
+function createHeroButton(id: string, text: string, onClick: () => void) {
   const btn = document.createElement("button");
   btn.id = id;
   btn.className = "sc-button sc-button-medium sc-shuffle-glass";
@@ -1261,11 +1282,11 @@ const RESERVED_TOP_SLUGS = new Set([
   "artist-plans", "library", "apps", "help", "legal", "community-guidelines",
 ]);
 
-function isLikelyUsername(slug) {
+function isLikelyUsername(slug: string) {
   return !!slug && !RESERVED_TOP_SLUGS.has(slug);
 }
 
-const HERO_BUTTON_IDS = [
+const HERO_BUTTON_IDS: string[] = [
   "sc-shuffle-likes-hero",
   "sc-shuffle-all-hero",
   "sc-shuffle-reposts-hero",
@@ -1274,7 +1295,7 @@ const HERO_BUTTON_IDS = [
   "sc-shuffle-playlist-hero",
 ];
 
-function removeStaleHeroButtons(keepIds = []) {
+function removeStaleHeroButtons(keepIds: string[] = []) {
   const keep = new Set(keepIds);
   for (const id of HERO_BUTTON_IDS) {
     if (!keep.has(id)) document.getElementById(id)?.remove?.();
@@ -1351,7 +1372,7 @@ function ensureHeroButtons() {
     isTracksTab ? "sc-shuffle-tracks-hero" : null,
     isPlaylistsTab ? "sc-shuffle-playlists-hero" : null,
     isPlaylist ? "sc-shuffle-playlist-hero" : null,
-  ].filter(Boolean);
+  ].filter((id): id is string => id !== null);
 
   removeStaleHeroButtons(activeButtonIds);
 

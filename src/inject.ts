@@ -1,8 +1,8 @@
 // Native-context helper; runs in MAIN world to poke SoundCloud's player/router
 (function () {
-  const log = (...args) => console.log("[SC True Shuffle][inject]", ...args);
+  const log = (...args: unknown[]) => console.log("[SC True Shuffle][inject]", ...args);
 
-  function urlsRoughlyMatch(a, b) {
+  function urlsRoughlyMatch(a: string, b: string) {
     try {
       const ua = new URL(a, window.location.origin);
       const ub = new URL(b, window.location.origin);
@@ -12,7 +12,7 @@
     }
   }
 
-  function clickRouterLink(permalink) {
+  function clickRouterLink(permalink: string) {
     const link = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]")).find((anchor) =>
       urlsRoughlyMatch(anchor.href, permalink)
     );
@@ -34,7 +34,7 @@
     }
   }
 
-  function triggerMouseClick(element, label) {
+  function triggerMouseClick(element: HTMLElement | null, label: string) {
     if (!element) return false;
     try {
       element.focus?.();
@@ -54,7 +54,7 @@
     }
   }
 
-  function getFooterPlayButton() {
+  function getFooterPlayButton(): HTMLElement | null {
     const selectors = [
       'button[aria-label][class*="playControl"]',
       'button.playControl[aria-label]',
@@ -62,13 +62,13 @@
       'button[aria-label^="Pause"]',
     ];
     for (const sel of selectors) {
-      const btn = document.querySelector(sel);
+      const btn = document.querySelector<HTMLElement>(sel);
       if (btn) return btn;
     }
     return null;
   }
 
-  function isPlayStartButton(element) {
+  function isPlayStartButton(element: Element | null) {
     if (!element) return false;
     const label = `${element.getAttribute("aria-label") || ""} ${element.getAttribute("title") || ""}`.toLowerCase();
     const className = String(element.className || "").toLowerCase();
@@ -79,7 +79,7 @@
     return false;
   }
 
-  function getTargetedPagePlayButton(permalink) {
+  function getTargetedPagePlayButton(permalink: string | null): HTMLElement | null {
     if (!permalink) return null;
     const links = Array.from(document.querySelectorAll<HTMLAnchorElement>("a[href]"))
       .filter((anchor) => urlsRoughlyMatch(anchor.href, permalink))
@@ -91,7 +91,7 @@
         link.parentElement;
       if (!container) continue;
 
-      const playBtn = container.querySelector(
+      const playBtn = container.querySelector<HTMLElement>(
         "a.playButton, a[class*='playButton'], a[class*='sc-button-play'], a[role='button'][title^='Play'], a[role='button'][aria-label^='Play'], button.playButton, button[class*='playButton'], button[class*='sc-button-play'], button[aria-label^='Play'], button[title^='Play']"
       );
       if (playBtn && !playBtn.closest(".playControls") && isPlayStartButton(playBtn)) return playBtn;
@@ -139,7 +139,7 @@
     ];
 
     for (const sel of primarySelectors) {
-      const btn = document.querySelector(sel);
+      const btn = document.querySelector<HTMLElement>(sel);
       if (btn && !btn.closest(".playControls") && isPlayStartButton(btn)) return btn;
     }
 
@@ -153,13 +153,13 @@
     return triggerMouseClick(btn, "footer-play-current");
   }
 
-  function clickTargetedPagePlay(permalink) {
+  function clickTargetedPagePlay(permalink: string | null) {
     const btn = getTargetedPagePlayButton(permalink);
     if (!btn) return false;
     return triggerMouseClick(btn, "targeted-page-play");
   }
 
-  function navigateTo(permalink) {
+  function navigateTo(permalink: string) {
     if (!permalink) return;
     try {
       if (clickRouterLink(permalink)) return;
@@ -198,7 +198,7 @@
       // Placeholder: hook into internal player once signatures are verified
       return true;
     },
-    playTrack(trackUrnOrUrl) {
+    playTrack(trackUrnOrUrl: string) {
       navigateTo(trackUrnOrUrl);
     },
     clickFooterPlayCurrent,

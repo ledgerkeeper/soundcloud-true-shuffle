@@ -54,9 +54,12 @@ The real playback queue stays inside the extension. SoundCloud remains the playb
 ## Development
 
 - Install dependencies with `pnpm install`.
-- `pnpm run check` type-checks the TypeScript sources.
+- `pnpm test` runs black-box queue/message regression tests and source-contract checks for protected playback fallbacks.
+- `pnpm run check` strictly type-checks the TypeScript sources.
+- `pnpm run check:generated` verifies that committed `src/*.js` matches the TypeScript output.
 - `pnpm run build` compiles sources, refreshes root `src/*.js`, and copies extension assets to `dist/`.
-- `pnpm run check:dist` verifies that root and `dist/` manifest references exist.
+- `pnpm run check:dist` verifies versions, manifest references, and byte-identical root/`dist` assets.
+- `pnpm run verify` runs the complete local and CI quality gate.
 
 If you edit TypeScript files, run `pnpm run build` and commit the refreshed generated JavaScript too. The generated `dist/` folder is ignored; the committed root `src/*.js` files are what make clone-and-load work.
 
@@ -94,8 +97,6 @@ The extension uses:
 - `storage`
 - `cookies`
 - `webRequest`
-- `scripting`
-- `webNavigation`
 
 All traffic stays on SoundCloud domains. No external telemetry is added by the extension.
 

@@ -1,3 +1,4 @@
+"use strict";
 (() => {
     const statusEl = document.getElementById("status");
     const statePillEl = document.getElementById("state-pill");
@@ -34,7 +35,7 @@
         let requesterTabId = null;
         try {
             const tab = await getActiveTab();
-            if (Number.isFinite(tab?.id))
+            if (typeof tab?.id === "number" && Number.isFinite(tab.id))
                 requesterTabId = tab.id;
         }
         catch { }
@@ -45,7 +46,7 @@
         let requesterTabId = null;
         try {
             const tab = await getActiveTab();
-            if (Number.isFinite(tab?.id))
+            if (typeof tab?.id === "number" && Number.isFinite(tab.id))
                 requesterTabId = tab.id;
         }
         catch { }
@@ -66,8 +67,10 @@
             statePillEl.textContent = "Idle";
             return;
         }
-        const count = Number.isFinite(status?.count) ? status.count : null;
-        const current = Number.isFinite(status?.currentIndex) ? status.currentIndex + 1 : null;
+        const count = typeof status?.count === "number" && Number.isFinite(status.count) ? status.count : null;
+        const current = typeof status?.currentIndex === "number" && Number.isFinite(status.currentIndex)
+            ? status.currentIndex + 1
+            : null;
         statePillEl.dataset.active = "true";
         if (!isActiveTab) {
             statePillEl.textContent = "Other tab";
@@ -144,7 +147,7 @@
     }
     async function playQueueIndex(index) {
         const activeTab = await getActiveTab().catch(() => null);
-        const tabId = Number.isFinite(activeTab?.id) ? activeTab.id : null;
+        const tabId = typeof activeTab?.id === "number" && Number.isFinite(activeTab.id) ? activeTab.id : null;
         showStatus("Switching track...", "info");
         const result = await sendRuntimeMessage({
             type: "PLAY_QUEUE_INDEX",
@@ -161,7 +164,9 @@
     function renderQueue(queueState) {
         const currentEntry = queueState?.currentEntry || null;
         const upNextEntries = Array.isArray(queueState?.upNextEntries) ? queueState.upNextEntries : [];
-        const remainingCount = Number.isFinite(queueState?.remainingCount) ? queueState.remainingCount : upNextEntries.length;
+        const remainingCount = typeof queueState?.remainingCount === "number" && Number.isFinite(queueState.remainingCount)
+            ? queueState.remainingCount
+            : upNextEntries.length;
         if (currentEntry) {
             queueCurrentEl.replaceChildren(createCurrentItem(currentEntry));
             nowPlayingCaptionEl.textContent = currentEntry.artist || currentEntry.url || "Active track";
@@ -205,7 +210,8 @@
         catch {
             return [];
         }
-        if (!parsed.hostname.includes("soundcloud.com"))
+        const hostname = parsed.hostname.toLowerCase();
+        if (hostname !== "soundcloud.com" && !hostname.endsWith(".soundcloud.com"))
             return [];
         const path = parsed.pathname.toLowerCase();
         const parts = path.split("/").filter(Boolean);
@@ -325,7 +331,7 @@
             btn.addEventListener("click", async () => {
                 showStatus(`Starting ${action.label.toLowerCase()}...`, "info");
                 const activeTab = await getActiveTab().catch(() => null);
-                const tabId = Number.isFinite(activeTab?.id) ? activeTab.id : null;
+                const tabId = typeof activeTab?.id === "number" && Number.isFinite(activeTab.id) ? activeTab.id : null;
                 const result = await action.run(tabId);
                 if (!result.ok) {
                     showStatus(result.error || "Background service worker not available", "error");

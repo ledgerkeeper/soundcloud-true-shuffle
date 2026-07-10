@@ -1,9 +1,14 @@
+"use strict";
 (() => {
     // Content-script bridge: injects native controller, UI hooks, and reliably detects track end
     const LOG_PREFIX = "[SC True Shuffle Listener]";
     let showToastTimer = 0;
     let ensurePlayingLastKickAt = 0;
     let timelineEndSeekWatcherBound = false;
+    let observerMaintenanceFrame = 0;
+    function errorMessage(error) {
+        return error instanceof Error ? error.message : String(error);
+    }
     function log(...args) {
         console.log(LOG_PREFIX, ...args);
     }
@@ -45,7 +50,7 @@
             return true;
         }
         catch (e) {
-            log("chrome.runtime.sendMessage threw:", e?.message || e);
+            log("chrome.runtime.sendMessage threw:", errorMessage(e));
             showToast("Extension reloaded. Refresh the tab.", true);
             return false;
         }
@@ -246,24 +251,6 @@
             return false;
         }
     }
-    function waitForTrackToLoad(targetUrl, timeoutMs = 12000) {
-        const startedAt = Date.now();
-        return new Promise((resolve) => {
-            const tick = () => {
-                const href = getCurrentTrackHref();
-                if (href && urlsRoughlyMatch(href, targetUrl)) {
-                    resolve(true);
-                    return;
-                }
-                if (Date.now() - startedAt > timeoutMs) {
-                    resolve(false);
-                    return;
-                }
-                setTimeout(tick, 250);
-            };
-            tick();
-        });
-    }
     function waitForExpectedPageReady(targetUrl, timeoutMs = 1800) {
         const startedAt = Date.now();
         return new Promise((resolve) => {
@@ -407,6 +394,7 @@
                 .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
             return true;
         }
+        return false;
     });
     function ensurePlayingOnce(expectedUrl) {
         const now = Date.now();
@@ -431,9 +419,6 @@
                 return true;
         }
         const canKick = now - ensurePlayingLastKickAt > 1200;
-        const footerPlayLabel = (footerBtn?.getAttribute("aria-label") ||
-            footerBtn?.getAttribute("title") ||
-            "").toLowerCase();
         // If we're on the target page but the player is still on the previous track,
         // click the page's own Play button to load the current track into the player.
         if (expectedUrl && pageMatches && !playerOnExpected && canKick) {
@@ -461,8 +446,12 @@
         return false;
     }
     function ensurePlayingWithRetry(expectedUrl, options = {}) {
-        const attempts = Number.isFinite(options?.attempts) ? Math.max(1, options.attempts) : 20;
-        const intervalMs = Number.isFinite(options?.intervalMs) ? Math.max(50, options.intervalMs) : 500;
+        const attempts = typeof options.attempts === "number" && Number.isFinite(options.attempts)
+            ? Math.max(1, options.attempts)
+            : 20;
+        const intervalMs = typeof options.intervalMs === "number" && Number.isFinite(options.intervalMs)
+            ? Math.max(50, options.intervalMs)
+            : 500;
         return new Promise((resolve) => {
             let attemptsLeft = attempts;
             const tick = () => {
@@ -589,8 +578,6 @@
         }
         return null;
     }
-    // Note: We intentionally do not relay SC_SHUFFLE_NAVIGATE back to background.
-    // Background drives navigation; relaying can create loops and resume the wrong track.
     const state = {
         lastUrl: location.href,
         lastTrackHref: null,
@@ -1022,7 +1009,7 @@
         document.addEventListener("mouseup", onSeekInteraction, true);
         document.addEventListener("touchend", onSeekInteraction, true);
     }
-    const observer = new MutationObserver(() => {
+    function runObserverMaintenance() {
         if (shuffleRuntime.isShuffling) {
             suppressUnexpectedPlaybackWhileAdvancing();
             bindAudioEndListener();
@@ -1030,6 +1017,17 @@
         }
         ensureFooterButtons();
         ensureHeroButtons();
+    }
+    function scheduleObserverMaintenance() {
+        if (observerMaintenanceFrame)
+            return;
+        observerMaintenanceFrame = window.requestAnimationFrame(() => {
+            observerMaintenanceFrame = 0;
+            runObserverMaintenance();
+        });
+    }
+    const observer = new MutationObserver(() => {
+        scheduleObserverMaintenance();
     });
     function startObservers() {
         const target = document.body; // Observe entire body for SPA changes
@@ -1197,7 +1195,7 @@
             isTracksTab ? "sc-shuffle-tracks-hero" : null,
             isPlaylistsTab ? "sc-shuffle-playlists-hero" : null,
             isPlaylist ? "sc-shuffle-playlist-hero" : null,
-        ].filter(Boolean);
+        ].filter((id) => id !== null);
         removeStaleHeroButtons(activeButtonIds);
         if (!shouldShowAny)
             return;

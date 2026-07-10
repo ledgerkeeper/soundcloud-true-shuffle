@@ -1,3 +1,4 @@
+"use strict";
 // Native-context helper; runs in MAIN world to poke SoundCloud's player/router
 (function () {
     const log = (...args) => console.log("[SC True Shuffle][inject]", ...args);

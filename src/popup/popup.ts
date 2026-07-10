@@ -17,7 +17,7 @@ type QueueState = {
   currentIndex?: number;
 };
 
-type RuntimeResult<T = any> = {
+type RuntimeResult<T = RuntimeResponse> = {
   ok: boolean;
   response: T | null;
   error?: string;
@@ -40,9 +40,9 @@ const queueCaptionEl = document.getElementById("queue-caption") as HTMLElement;
 const queueListEl = document.getElementById("queue-list") as HTMLElement;
 const queueEmptyEl = document.getElementById("queue-empty") as HTMLElement;
 
-let currentPageUrl = null;
+let currentPageUrl: string | null = null;
 
-function showStatus(message, tone = "info") {
+function showStatus(message: string, tone = "info") {
   statusEl.textContent = message;
   statusEl.className = `status status--${tone}`;
 }
@@ -52,8 +52,8 @@ async function getActiveTab() {
   return tab || null;
 }
 
-async function sendRuntimeMessage(message) {
-  return new Promise<RuntimeResult>((resolve) => {
+async function sendRuntimeMessage<T = RuntimeResponse>(message: RuntimeRequest) {
+  return new Promise<RuntimeResult<T>>((resolve) => {
     chrome.runtime.sendMessage(message, (resp) => {
       const err = chrome.runtime.lastError;
       if (err) {
@@ -66,24 +66,24 @@ async function sendRuntimeMessage(message) {
 }
 
 async function requestStatus() {
-  let requesterTabId = null;
+  let requesterTabId: number | null = null;
   try {
     const tab = await getActiveTab();
-    if (Number.isFinite(tab?.id)) requesterTabId = tab.id;
+    if (typeof tab?.id === "number" && Number.isFinite(tab.id)) requesterTabId = tab.id;
   } catch {}
 
-  const result = await sendRuntimeMessage({ type: "GET_STATUS", requesterTabId });
+  const result = await sendRuntimeMessage<QueueState>({ type: "GET_STATUS", requesterTabId });
   return result.ok ? (result.response || null) : null;
 }
 
 async function requestQueue() {
-  let requesterTabId = null;
+  let requesterTabId: number | null = null;
   try {
     const tab = await getActiveTab();
-    if (Number.isFinite(tab?.id)) requesterTabId = tab.id;
+    if (typeof tab?.id === "number" && Number.isFinite(tab.id)) requesterTabId = tab.id;
   } catch {}
 
-  const result = await sendRuntimeMessage({
+  const result = await sendRuntimeMessage<QueueState>({
     type: "GET_QUEUE",
     requesterTabId,
     maxItems: 50,
@@ -102,8 +102,10 @@ function setUiFromStatus(status: QueueState | null) {
     return;
   }
 
-  const count = Number.isFinite(status?.count) ? status.count : null;
-  const current = Number.isFinite(status?.currentIndex) ? status.currentIndex + 1 : null;
+  const count = typeof status?.count === "number" && Number.isFinite(status.count) ? status.count : null;
+  const current = typeof status?.currentIndex === "number" && Number.isFinite(status.currentIndex)
+    ? status.currentIndex + 1
+    : null;
   statePillEl.dataset.active = "true";
   if (!isActiveTab) {
     statePillEl.textContent = "Other tab";
@@ -185,9 +187,9 @@ function createCurrentItem(entry: QueueEntry) {
   return item;
 }
 
-async function playQueueIndex(index) {
+async function playQueueIndex(index: number) {
   const activeTab = await getActiveTab().catch(() => null);
-  const tabId = Number.isFinite(activeTab?.id) ? activeTab.id : null;
+  const tabId = typeof activeTab?.id === "number" && Number.isFinite(activeTab.id) ? activeTab.id : null;
   showStatus("Switching track...", "info");
   const result = await sendRuntimeMessage({
     type: "PLAY_QUEUE_INDEX",
@@ -205,7 +207,9 @@ async function playQueueIndex(index) {
 function renderQueue(queueState: QueueState | null) {
   const currentEntry = queueState?.currentEntry || null;
   const upNextEntries = Array.isArray(queueState?.upNextEntries) ? queueState.upNextEntries : [];
-  const remainingCount = Number.isFinite(queueState?.remainingCount) ? queueState.remainingCount : upNextEntries.length;
+  const remainingCount = typeof queueState?.remainingCount === "number" && Number.isFinite(queueState.remainingCount)
+    ? queueState.remainingCount
+    : upNextEntries.length;
 
   if (currentEntry) {
     queueCurrentEl.replaceChildren(createCurrentItem(currentEntry));
@@ -254,14 +258,15 @@ function resolveContextActions(url: string | null): ContextAction[] {
     return [];
   }
 
-  if (!parsed.hostname.includes("soundcloud.com")) return [];
+  const hostname = parsed.hostname.toLowerCase();
+  if (hostname !== "soundcloud.com" && !hostname.endsWith(".soundcloud.com")) return [];
 
   const path = parsed.pathname.toLowerCase();
   const parts = path.split("/").filter(Boolean);
   const first = parts[0] || "";
   const isYouSection = first === "you";
   const ownerLike = isYouSection || isLikelyUsername(first);
-  const actions = [];
+  const actions: ContextAction[] = [];
 
   actions.push({
     label: "Shuffle Likes",
@@ -340,7 +345,7 @@ function resolveContextActions(url: string | null): ContextAction[] {
     .slice(0, 4);
 }
 
-function renderContextActions(url) {
+function renderContextActions(url: string | null) {
   const actions = resolveContextActions(url);
   contextActionsEl.replaceChildren();
 
@@ -375,7 +380,7 @@ function renderContextActions(url) {
     btn.addEventListener("click", async () => {
       showStatus(`Starting ${action.label.toLowerCase()}...`, "info");
       const activeTab = await getActiveTab().catch(() => null);
-      const tabId = Number.isFinite(activeTab?.id) ? activeTab.id : null;
+      const tabId = typeof activeTab?.id === "number" && Number.isFinite(activeTab.id) ? activeTab.id : null;
       const result = await action.run(tabId);
       if (!result.ok) {
         showStatus(result.error || "Background service worker not available", "error");

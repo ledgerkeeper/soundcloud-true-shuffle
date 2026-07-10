@@ -27,7 +27,7 @@ It is responsible for:
 - deciding which track should play next,
 - exposing queue data to the popup.
 
-Queue state is persisted to `chrome.storage.local` so it survives MV3 worker unloads.
+Queue state is persisted to `chrome.storage.local` so it survives MV3 worker unloads. The current storage reader remains compatible with the legacy `queueUrls` shape, while new writes persist queue entries only. Queue contents are written when they change; routine track advances update a small position record instead of rewriting the full collection. Playback-state writes are serialized, and a queue is not installed in memory or navigated until its durable write succeeds.
 
 ### Content Script
 
@@ -72,10 +72,7 @@ The popup only limits what it renders. It does not truncate the real queue.
 
 ## Queue Model
 
-The background keeps two synchronized representations:
-
-- `playbackQueue`: full queue entries with metadata,
-- `playbackQueueUrls`: full queue URLs used by the playback engine.
+The background keeps one authoritative `playbackQueue` representation. Playback reads each URL from its queue entry instead of maintaining a second synchronized URL array.
 
 Each queue entry stores:
 
@@ -102,6 +99,8 @@ When a shuffle command starts:
 5. the queue is shuffled,
 6. the full queue is stored in memory and persisted.
 
+Each queue build owns an `AbortController`. Starting another shuffle or stopping the current one aborts superseded API work, including client-ID waiting, URL resolution, and navigation fallback waits. The generation-number guard and serialized durable commit remain as defenses against stale writes and navigation.
+
 ### Track Advancement
 
 When the queue advances:
@@ -122,6 +121,8 @@ Track end is inferred from multiple signals in the content script:
 - footer/player state changes.
 
 The code includes guard rails to avoid duplicate advances when track-end detection, SPA route updates, and manual skip actions overlap.
+
+SoundCloud produces frequent DOM mutations. Mutation-triggered maintenance is coalesced to one pass per animation frame, while the existing one-second safety poll remains in place for background tabs and missed DOM signals.
 
 ## Active Tab Ownership
 
