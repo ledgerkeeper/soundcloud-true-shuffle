@@ -33,6 +33,7 @@
             state.pendingAdvanceUntil = 0;
             state.pendingAdvanceUrl = null;
             state.pendingExpectedUrl = null;
+            state.pendingExpectedTitle = null;
             state.lastAdvanceKickAt = 0;
         }
     }
@@ -251,12 +252,74 @@
             return false;
         }
     }
-    function waitForExpectedPageReady(targetUrl, timeoutMs = 1800) {
+    function normalizeTrackText(value) {
+        return String(value || "")
+            .normalize("NFKC")
+            .replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "")
+            .replace(/\s+/g, " ")
+            .trim()
+            .toLocaleLowerCase();
+    }
+    function isVisiblyRendered(element) {
+        if (!element)
+            return false;
+        const htmlElement = element;
+        const rect = htmlElement.getBoundingClientRect?.();
+        if (rect && (rect.width <= 0 || rect.height <= 0))
+            return false;
+        const style = window.getComputedStyle?.(htmlElement);
+        if (style && (style.display === "none" || style.visibility === "hidden"))
+            return false;
+        return true;
+    }
+    function getModernTrackPageButton(expectedTitle = null) {
+        const normalizedExpectedTitle = normalizeTrackText(expectedTitle);
+        const buttonSelector = 'button[aria-label="Play"], button[aria-label="Pause"], button[aria-label^="Play "], button[aria-label^="Pause "]';
+        const headings = Array.from(document.querySelectorAll('main section[aria-label="Track header"] h1[title], main section[aria-label="Track header"] h2[title], h1[title], h2[title], h1, h2'));
+        const candidates = [];
+        for (const heading of headings) {
+            const headingTitle = normalizeTrackText(heading.getAttribute("title") || heading.textContent);
+            if (normalizedExpectedTitle && headingTitle !== normalizedExpectedTitle)
+                continue;
+            const trackHeader = heading.closest('section[aria-label="Track header"]');
+            const headerButton = trackHeader?.querySelector(buttonSelector);
+            if (headerButton && isValidPagePlayButton(headerButton) && !candidates.includes(headerButton)) {
+                candidates.push(headerButton);
+            }
+            let container = heading.parentElement;
+            for (let depth = 0; container && depth < 6; depth += 1, container = container.parentElement) {
+                const button = container.querySelector(buttonSelector);
+                if (button && isValidPagePlayButton(button) && !candidates.includes(button))
+                    candidates.push(button);
+            }
+        }
+        const visibleCandidate = candidates.find(isVisiblyRendered);
+        if (visibleCandidate)
+            return visibleCandidate;
+        if (candidates.length)
+            return candidates[0];
+        if (!normalizedExpectedTitle) {
+            const directButtons = Array.from(document.querySelectorAll(buttonSelector)).filter((button) => isValidPagePlayButton(button));
+            const directButton = directButtons.find(isVisiblyRendered) || directButtons[0];
+            if (directButton)
+                return directButton;
+        }
+        return null;
+    }
+    function getPageTransportButton(expectedUrl = null, expectedTitle = null) {
+        if (!expectedUrl || urlsRoughlyMatch(location.href, expectedUrl)) {
+            const modernButton = getModernTrackPageButton(expectedTitle);
+            if (modernButton)
+                return modernButton;
+        }
+        return getPagePlayButton(expectedUrl);
+    }
+    function waitForExpectedPageReady(targetUrl, expectedTitle = null, timeoutMs = 5000) {
         const startedAt = Date.now();
         return new Promise((resolve) => {
             const tick = () => {
                 const pageMatches = urlsRoughlyMatch(location.href, targetUrl);
-                const pageControl = getPagePlayButton(targetUrl);
+                const pageControl = getPageTransportButton(targetUrl, expectedTitle);
                 const footerTrackHref = getCurrentTrackHref();
                 const playerOnExpected = !!footerTrackHref && urlsRoughlyMatch(footerTrackHref, targetUrl);
                 if (pageMatches && (pageControl || playerOnExpected)) {
@@ -308,12 +371,14 @@
             return false;
         }
     }
-    function requestExpectedPagePlay(expectedUrl, source) {
+    function requestExpectedPagePlay(expectedUrl, source, expectedTitle = null) {
         state.lastAdvanceKickAt = Date.now();
-        const pageBtn = getPagePlayButton(expectedUrl);
-        const nativeRequested = dispatchNativeClick("SC_SHUFFLE_PAGE_PLAY", expectedUrl);
-        if (!nativeRequested && pageBtn)
-            pageBtn.click();
+        const candidate = getPageTransportButton(expectedUrl, expectedTitle);
+        const pageBtn = isPlayStartButton(candidate) ? candidate : null;
+        const nativeRequested = dispatchNativeClick("SC_SHUFFLE_PAGE_PLAY", {
+            url: expectedUrl,
+            title: expectedTitle,
+        });
         log(`${source}: requested page play for expected track`, {
             expectedUrl,
             footerTrackHref: getCurrentTrackHref(),
@@ -322,9 +387,10 @@
         });
         return nativeRequested || !!pageBtn;
     }
-    async function navigateAndPlay(url) {
+    async function navigateAndPlay(url, expectedTitle = null) {
         state.pendingAdvanceUntil = Math.max(state.pendingAdvanceUntil || 0, Date.now() + 6000);
         state.pendingExpectedUrl = url;
+        state.pendingExpectedTitle = expectedTitle;
         const currentAudio = getAudioEl();
         const currentFooterTrackHref = getCurrentTrackHref();
         if (currentAudio &&
@@ -341,9 +407,19 @@
             catch { }
         }
         window.dispatchEvent(new CustomEvent("SC_SHUFFLE_NAVIGATE", { detail: url }));
-        const pageReady = await waitForExpectedPageReady(url, 1800);
+        const pageReady = await waitForExpectedPageReady(url, expectedTitle, 5000);
         if (!pageReady) {
             log("NAVIGATE_AND_PLAY: expected page did not become ready", { url });
+            if (urlsRoughlyMatch(location.href, url)) {
+                requestExpectedPagePlay(url, "NAVIGATE_AND_PLAY_LATE_DOM");
+                ensurePlayingWithRetry(url, { attempts: 14, intervalMs: 450 })
+                    .then((isPlaying) => {
+                    if (!isPlaying)
+                        log("NAVIGATE_AND_PLAY: late DOM play was not confirmed", { url });
+                })
+                    .catch((e) => log("NAVIGATE_AND_PLAY: late DOM play failed", e?.message || e));
+                return true;
+            }
             return false;
         }
         const footerTrackHrefAfterNavigation = getCurrentTrackHref();
@@ -353,7 +429,12 @@
             "").toLowerCase();
         const playerOnExpected = !!footerTrackHrefAfterNavigation &&
             urlsRoughlyMatch(footerTrackHrefAfterNavigation, url);
-        if (playerOnExpected && footerBtn && footerPlayLabel.includes("play current")) {
+        const pageTransport = getPageTransportButton(url, expectedTitle);
+        const pagePlaying = isPlaying(pageTransport);
+        if (pagePlaying === true) {
+            log("NAVIGATE_AND_PLAY: new page player already reports playback", { url });
+        }
+        else if (playerOnExpected && footerBtn && footerPlayLabel.includes("play current")) {
             state.lastAdvanceKickAt = Date.now();
             const nativeClicked = dispatchNativeClick("SC_SHUFFLE_PLAY_CURRENT");
             if (!nativeClicked)
@@ -361,9 +442,9 @@
             log("NAVIGATE_AND_PLAY: clicked footer 'Play current' for expected track", { url });
         }
         else {
-            requestExpectedPagePlay(url, "NAVIGATE_AND_PLAY");
+            requestExpectedPagePlay(url, "NAVIGATE_AND_PLAY", expectedTitle);
         }
-        ensurePlayingWithRetry(url, { attempts: 14, intervalMs: 450 })
+        ensurePlayingWithRetry(url, { attempts: 14, intervalMs: 450, expectedTitle })
             .then((isPlaying) => {
             if (!isPlaying) {
                 log("NAVIGATE_AND_PLAY: deferred ensure did not confirm playback", { url });
@@ -383,31 +464,35 @@
             sendResponse?.({ ok: true });
         }
         if (req?.action === "NAVIGATE_AND_PLAY" && typeof req.url === "string") {
-            navigateAndPlay(req.url)
+            navigateAndPlay(req.url, req.title || null)
                 .then((ok) => sendResponse({ ok }))
                 .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
             return true;
         }
         if (req?.action === "ENSURE_PLAYING") {
-            ensurePlayingWithRetry(req?.url, { attempts: 14, intervalMs: 450 })
+            ensurePlayingWithRetry(req?.url, { attempts: 14, intervalMs: 450, expectedTitle: req.title || null })
                 .then((ok) => sendResponse({ ok }))
                 .catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
             return true;
         }
         return false;
     });
-    function ensurePlayingOnce(expectedUrl) {
+    function ensurePlayingOnce(expectedUrl, expectedTitle = null) {
         const now = Date.now();
         const audio = getAudioEl();
         const audioPaused = audio ? audio.paused === true : null;
         const footerTrackHref = getCurrentTrackHref();
         const footerBtn = getPlayButton();
         const pageMatches = expectedUrl ? urlsRoughlyMatch(location.href, expectedUrl) : false;
+        const pageTransport = getPageTransportButton(expectedUrl || null, expectedTitle);
+        const pagePlaying = isPlaying(pageTransport);
         const playerOnExpected = !!expectedUrl &&
             !!footerTrackHref &&
             urlsRoughlyMatch(footerTrackHref, expectedUrl);
         // Success criteria: expected track is actually loaded in the footer player and not paused.
         if (expectedUrl) {
+            if (pageMatches && pagePlaying === true)
+                return true;
             if (playerOnExpected) {
                 const footerPlaying = isPlaying(footerBtn) === true;
                 if ((audio && audio.paused === false) || footerPlaying)
@@ -422,7 +507,8 @@
         // If we're on the target page but the player is still on the previous track,
         // click the page's own Play button to load the current track into the player.
         if (expectedUrl && pageMatches && !playerOnExpected && canKick) {
-            requestExpectedPagePlay(expectedUrl, "ENSURE_PLAYING");
+            ensurePlayingLastKickAt = now;
+            requestExpectedPagePlay(expectedUrl, "ENSURE_PLAYING", expectedTitle);
             return false;
         }
         // If the player is on the expected track but paused, unpause via footer control.
@@ -455,7 +541,7 @@
         return new Promise((resolve) => {
             let attemptsLeft = attempts;
             const tick = () => {
-                if (ensurePlayingOnce(expectedUrl)) {
+                if (ensurePlayingOnce(expectedUrl, options.expectedTitle || null)) {
                     resolve(true);
                     return;
                 }
@@ -592,6 +678,7 @@
         pendingAdvanceUntil: 0,
         pendingAdvanceUrl: null,
         pendingExpectedUrl: null,
+        pendingExpectedTitle: null,
         lastAdvanceSuppressionAt: 0,
         lastAdvanceKickAt: 0,
         boundAudioEl: null,
@@ -623,6 +710,7 @@
         state.pendingAdvanceUntil = Date.now() + 6000;
         state.pendingAdvanceUrl = location.href;
         state.pendingExpectedUrl = null;
+        state.pendingExpectedTitle = null;
         if (extra) {
             log(`Track end reported via ${reason}`, extra);
         }
@@ -641,21 +729,27 @@
             state.pendingAdvanceUntil = 0;
             state.pendingAdvanceUrl = null;
             state.pendingExpectedUrl = null;
+            state.pendingExpectedTitle = null;
             return;
         }
         const footerTrackHref = getCurrentTrackHref();
-        if (state.pendingExpectedUrl &&
-            footerTrackHref &&
-            urlsRoughlyMatch(footerTrackHref, state.pendingExpectedUrl)) {
+        const expectedModernPagePlaying = !!state.pendingExpectedUrl &&
+            urlsRoughlyMatch(location.href, state.pendingExpectedUrl) &&
+            isPlaying(getModernTrackPageButton(state.pendingExpectedTitle)) === true;
+        if (expectedModernPagePlaying ||
+            (state.pendingExpectedUrl &&
+                footerTrackHref &&
+                urlsRoughlyMatch(footerTrackHref, state.pendingExpectedUrl))) {
             state.pendingAdvanceUntil = 0;
             state.pendingAdvanceUrl = null;
             state.pendingExpectedUrl = null;
+            state.pendingExpectedTitle = null;
             return;
         }
         if (state.pendingExpectedUrl &&
             urlsRoughlyMatch(location.href, state.pendingExpectedUrl) &&
             now - state.lastAdvanceKickAt > 450) {
-            requestExpectedPagePlay(state.pendingExpectedUrl, "ADVANCE_SUPPRESSION");
+            requestExpectedPagePlay(state.pendingExpectedUrl, "ADVANCE_SUPPRESSION", state.pendingExpectedTitle);
         }
         if (now - state.lastAdvanceSuppressionAt < 250)
             return;
@@ -884,7 +978,9 @@
                 reportTrackFinished("track-changed-after-near-end");
             }
             const expectedAdvanceReached = !!state.pendingExpectedUrl &&
-                (currentTrackHref && urlsRoughlyMatch(currentTrackHref, state.pendingExpectedUrl));
+                ((currentTrackHref && urlsRoughlyMatch(currentTrackHref, state.pendingExpectedUrl)) ||
+                    (urlsRoughlyMatch(currentUrl, state.pendingExpectedUrl) &&
+                        isPlaying(getModernTrackPageButton(state.pendingExpectedTitle)) === true));
             const unexpectedTrackWhilePending = !!state.pendingExpectedUrl &&
                 !expectedAdvanceReached;
             state.lastUrl = currentUrl;
@@ -907,6 +1003,7 @@
                 state.pendingAdvanceUntil = 0;
                 state.pendingAdvanceUrl = null;
                 state.pendingExpectedUrl = null;
+                state.pendingExpectedTitle = null;
                 log("Track change detected, reset end flags");
             }
         }

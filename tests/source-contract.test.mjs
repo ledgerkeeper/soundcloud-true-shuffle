@@ -4,6 +4,7 @@ import test from "node:test";
 
 const background = await readFile(new URL("../src/background.ts", import.meta.url), "utf8");
 const content = await readFile(new URL("../src/content.ts", import.meta.url), "utf8");
+const inject = await readFile(new URL("../src/inject.ts", import.meta.url), "utf8");
 const popup = await readFile(new URL("../src/popup/popup.ts", import.meta.url), "utf8");
 const manifest = JSON.parse(await readFile(new URL("../manifest.json", import.meta.url), "utf8"));
 const tsconfig = JSON.parse(await readFile(new URL("../tsconfig.json", import.meta.url), "utf8"));
@@ -33,14 +34,20 @@ test("critical playback fallbacks and end signals remain present", () => {
   }
 
   for (const required of [
-    "USE_CONTENT_NAVIGATION_PRIMARY = true",
-    "HARD_NAVIGATION_COOLDOWN_MS = 2500",
     "tryPlayViaContentNavigation",
-    "fallbackToHardNavigation",
+    "Navigate through native page DOM",
     "shouldIgnoreTrackFinished",
   ]) {
     assert.ok(background.includes(required), `missing protected background behavior: ${required}`);
   }
+
+  assert.equal(background.includes("chrome.tabs.update"), false, "background never reloads the SoundCloud tab");
+  assert.equal(inject.includes("window.location.href ="), false, "main-world navigation never hard reloads");
+  assert.ok(content.includes("getModernTrackPageButton"));
+  assert.ok(inject.includes("getModernTrackPageButton"));
+  assert.ok(inject.includes("playThroughSoundCloudManager"));
+  assert.ok(inject.includes("manager.playSource"));
+  assert.ok(inject.includes("SoundModel.resolve"));
 });
 
 test("mutation bursts are coalesced without removing the safety poll", () => {

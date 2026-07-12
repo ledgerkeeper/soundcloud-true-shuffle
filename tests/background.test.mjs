@@ -524,7 +524,7 @@ test("an aborted position write rolls back when the superseding shuffle fails", 
   );
 });
 
-test("content navigation failure still uses the hard-navigation fallback", async () => {
+test("content navigation failure never reloads the SoundCloud tab", async () => {
   const track = createTrack(13, "Fallback");
   const fetchImpl = async (input) => {
     const url = String(input);
@@ -562,10 +562,7 @@ test("content navigation failure still uses the hard-navigation fallback", async
 
   assert.equal(result.success, true);
   assert.ok(harness.sentTabMessages.some(({ message }) => message.action === "NAVIGATE_AND_PLAY"));
-  assert.deepEqual(harness.updatedTabs, [{
-    tabId: 7,
-    properties: { url: "https://soundcloud.com/test/track-13" },
-  }]);
+  assert.deepEqual(harness.updatedTabs, []);
 });
 
 test("skip, previous, and direct queue selection keep their navigation semantics", async () => {

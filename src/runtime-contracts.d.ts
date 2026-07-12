@@ -18,7 +18,6 @@ type BackgroundRuntimeRequest = (
   | { type: "START_SHUFFLE_PLAYLIST"; url: string; tabId?: number | null }
   | { type: "START_SHUFFLE_PLAYLISTS"; url: string; tabId?: number | null }
   | { type: "TRACK_FINISHED" }
-  | { type: "NAVIGATE_REQUEST"; permalink: string }
   | { type: "SKIP_NEXT" }
   | { type: "SKIP_PREV" }
 ) & { action?: never };
@@ -34,8 +33,8 @@ type ContentRuntimeRequest = (
       activeTabId: number | null;
       currentEntry: RuntimeQueueEntry | null;
     }
-  | { action: "NAVIGATE_AND_PLAY"; url: string }
-  | { action: "ENSURE_PLAYING"; url: string }
+  | { action: "NAVIGATE_AND_PLAY"; url: string; title?: string }
+  | { action: "ENSURE_PLAYING"; url: string; title?: string }
 ) & { type?: never };
 
 type RuntimeRequest = BackgroundRuntimeRequest | ContentRuntimeRequest;

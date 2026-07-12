@@ -50,8 +50,9 @@ Only the active controller tab is allowed to drive queue progression.
 It is used for:
 
 - SPA-style route changes,
-- main-world click dispatch for native SoundCloud controls,
-- router-like navigation attempts before falling back to hard navigation.
+- resolving track models through SoundCloud's already-loaded model layer,
+- starting the resolved track through SoundCloud's own `PlayManager`,
+- main-world native-control clicks only as a compatibility fallback.
 
 This layer exists because some SoundCloud interactions are more reliable from the page context than from the isolated extension world.
 
@@ -107,9 +108,9 @@ When the queue advances:
 
 1. the background selects the current queue entry,
 2. it resolves the playable URL if needed,
-3. it asks the content script to perform SPA navigation first,
-4. the content script tries to make SoundCloud load the target track,
-5. if SPA confirmation fails, the background can fall back to `chrome.tabs.update`.
+3. it asks the content script to perform SPA navigation,
+4. the main-world bridge resolves the target SoundCloud model and hands it to the native player manager,
+5. if SPA confirmation fails, the current document remains loaded instead of triggering a captcha-prone hard refresh.
 
 ### End Detection
 
@@ -151,9 +152,9 @@ The popup does not compute queue state on its own.
 ## Known Tradeoffs
 
 - SoundCloud is a moving SPA, so DOM selectors can break.
-- Some playback transitions are still best-effort because they depend on SoundCloud internal UI state.
+- The native playback bridge feature-detects internal player/model exports, but SoundCloud can still change those private module contracts.
 - Large collections can still be expensive to fetch even though popup rendering is capped.
-- SPA-first playback is preferred, but hard navigation remains the reliability fallback.
+- Playback uses SPA navigation plus the native in-page player; a failed transition is logged without reloading the SoundCloud tab.
 
 ## Current Design Direction
 

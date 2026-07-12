@@ -7,11 +7,7 @@ const LOG_PREFIX = "[SC True Shuffle][bg]";
 const STATE_STORAGE_KEY = "sc_shuffle_state_v2";
 const POSITION_STORAGE_KEY = "sc_shuffle_position_v1";
 const PLAYABLE_URL_RESOLVE_CONCURRENCY = 4;
-const HARD_NAVIGATION_COOLDOWN_MS = 2500;
-const USE_CONTENT_NAVIGATION_PRIMARY = true;
 const MAX_POPUP_QUEUE_ITEMS = 50;
-
-type NavigationMode = "content" | "hard";
 
 type QueueEntry = {
   index: number | null;
@@ -33,10 +29,6 @@ type StatusSnapshot = {
 type ApiError = Error & {
   status?: number;
   endpoint?: string;
-};
-
-type NavigationOptions = {
-  navigationMode?: NavigationMode;
 };
 
 type PendingClientIdResolver = {
@@ -144,21 +136,6 @@ function tabsSendMessage<T = RuntimeResponse>(tabId: number, message: RuntimeReq
   });
 }
 
-function ensurePlayingAfterNavigation(tabId: number, url: string, signal?: AbortSignal) {
-  let attemptsLeft = 24;
-  const tick = async () => {
-    if (signal?.aborted) return;
-    if (attemptsLeft <= 0) return;
-    attemptsLeft -= 1;
-    const resp = await tabsSendMessage(tabId, { action: "ENSURE_PLAYING", url });
-    if (signal?.aborted) return;
-    if (resp?.ok === true) return;
-    if (attemptsLeft <= 0) return;
-    setTimeout(tick, 600);
-  };
-  setTimeout(tick, 1200);
-}
-
 async function hydratePlaybackState(force = false) {
   if (!force && stateHydrated) return;
   if (stateHydrating) return stateHydrating;
@@ -223,7 +200,6 @@ let cachedClientId: string | null = null;
 let clientIdCheckedAt = 0;
 let activeTabId: number | null = null;
 let lastAdvanceAt = 0;
-let lastHardNavigationAt = 0;
 let stateHydrated = false;
 let stateHydrating: Promise<void> | null = null;
 let queueGeneration = 0;
@@ -262,22 +238,6 @@ function throwIfAborted(signal?: AbortSignal) {
 function fallbackUnlessAborted<T>(_error: unknown, signal: AbortSignal | undefined, fallback: T): T {
   throwIfAborted(signal);
   return fallback;
-}
-
-function sleep(ms: number, signal?: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    throwIfAborted(signal);
-    const timerId = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timerId);
-      const reason = signal?.reason;
-      reject(reason instanceof Error ? reason : new DOMException("Shuffle request was superseded", "AbortError"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function runSerializedPlaybackWrite<T>(operation: () => Promise<T>): Promise<T> {
@@ -321,23 +281,6 @@ async function persistPlaybackState(queueChanged = false) {
   const index = currentIndex;
   const tabId = activeTabId;
   return runSerializedPlaybackWrite(() => writePlaybackSnapshot(entries, index, tabId, queueChanged));
-}
-
-function tabsUpdate(tabId: number, updateProperties: chrome.tabs.UpdateProperties) {
-  return new Promise<{ ok: boolean; tab?: chrome.tabs.Tab | null; error?: string }>((resolve) => {
-    try {
-      chrome.tabs.update(tabId, updateProperties, (tab) => {
-        const err = chrome.runtime.lastError;
-        if (err) {
-          resolve({ ok: false, error: err.message || String(err) });
-          return;
-        }
-        resolve({ ok: true, tab: tab || null });
-      });
-    } catch (e) {
-      resolve({ ok: false, error: errorMessage(e) });
-    }
-  });
 }
 
 function resolveTargetTabId(...candidates: Array<number | null | undefined>): number | null {
@@ -1031,54 +974,35 @@ async function preResolvePlayableQueueEntries(entries: QueueEntry[], signal?: Ab
   return resolvedEntries;
 }
 
-async function tryPlayViaContentNavigation(tabId: number, url: string, signal?: AbortSignal) {
+async function tryPlayViaContentNavigation(tabId: number, entry: QueueEntry, signal?: AbortSignal) {
   throwIfAborted(signal);
-  const resp = await tabsSendMessage(tabId, { action: "NAVIGATE_AND_PLAY", url });
+  const resp = await tabsSendMessage(tabId, {
+    action: "NAVIGATE_AND_PLAY",
+    url: entry.url,
+    title: entry.title,
+  });
   throwIfAborted(signal);
   if (resp?.ok === true) return true;
-  log("Content navigation failed, fallback required", {
+  log("Native DOM navigation was not confirmed; keeping the current document loaded", {
     tabId,
-    url,
+    url: entry.url,
     error: resp?.error || resp || null,
   });
   return false;
 }
 
-async function fallbackToHardNavigation(tabId: number, url: string, signal?: AbortSignal) {
-  throwIfAborted(signal);
-  const remainingCooldown = HARD_NAVIGATION_COOLDOWN_MS - (Date.now() - lastHardNavigationAt);
-  if (remainingCooldown > 0) {
-    await sleep(remainingCooldown, signal);
-  }
-
-  throwIfAborted(signal);
-  lastHardNavigationAt = Date.now();
-  log("Navigate fallback (tabs.update)", { tabId, url });
-  const nav = await tabsUpdate(tabId, { url });
-  throwIfAborted(signal);
-  if (!nav.ok) {
-    console.warn(LOG_PREFIX, "tabs.update fallback failed", nav.error);
-    return false;
-  }
-
-  ensurePlayingAfterNavigation(tabId, url, signal);
-  return true;
-}
-
 async function playNextInQueue(
   tabId: number | null,
-  options: NavigationOptions = {},
   signal?: AbortSignal
 ) {
   throwIfAborted(signal);
-  const navigationMode = options?.navigationMode === "hard" ? "hard" : "content";
   const targetTabId = tabId || activeTabId;
   if (!targetTabId || !playbackQueue.length || currentIndex >= playbackQueue.length) return;
   const url = playbackQueue[currentIndex]?.url;
   if (!url) {
     console.warn("Missing URL at index, skipping", currentIndex);
     await commitPlaybackPosition(currentIndex + 1, signal);
-    await playNextInQueue(targetTabId, options, signal);
+    await playNextInQueue(targetTabId, signal);
     return;
   }
 
@@ -1087,7 +1011,7 @@ async function playNextInQueue(
   if (!playableUrl) {
     console.warn("Unplayable URL, skipping", url);
     await commitPlaybackPosition(currentIndex + 1, signal);
-    await playNextInQueue(targetTabId, options, signal);
+    await playNextInQueue(targetTabId, signal);
     return;
   }
 
@@ -1096,13 +1020,9 @@ async function playNextInQueue(
   }
 
   throwIfAborted(signal);
-  if (USE_CONTENT_NAVIGATION_PRIMARY && navigationMode === "content") {
-    log("Navigate (content primary)", { tabId: targetTabId, index: currentIndex, url: playableUrl });
-    const playedViaContent = await tryPlayViaContentNavigation(targetTabId, playableUrl, signal);
-    if (playedViaContent) return;
-  }
-
-  await fallbackToHardNavigation(targetTabId, playableUrl, signal);
+  log("Navigate through native page DOM", { tabId: targetTabId, index: currentIndex, url: playableUrl });
+  const entry = playbackQueue[currentIndex];
+  if (entry) await tryPlayViaContentNavigation(targetTabId, entry, signal);
 }
 
 function shouldIgnoreTrackFinished() {
@@ -1150,7 +1070,7 @@ async function stopShuffle() {
   await notifyActiveTabState();
 }
 
-async function playQueueIndex(tabId: number, index: number, navigationMode: NavigationMode = "content") {
+async function playQueueIndex(tabId: number, index: number) {
   if (!playbackQueue.length) return { ok: false, error: "Queue is empty" };
   if (!Number.isFinite(index) || index < 0 || index >= playbackQueue.length) {
     return { ok: false, error: "Invalid queue index" };
@@ -1158,7 +1078,7 @@ async function playQueueIndex(tabId: number, index: number, navigationMode: Navi
   await commitPlaybackPosition(index);
   markAdvanced();
   await notifyActiveTabState();
-  await playNextInQueue(tabId, { navigationMode });
+  await playNextInQueue(tabId);
   return { ok: true, ...getStatusSnapshot({ requesterTabId: tabId }) };
 }
 
@@ -1244,7 +1164,7 @@ async function handleShuffleContext(
       return;
     }
     log("Shuffle started", { mode: request.mode, count: playbackQueue.length, tabId: activeTabId });
-    await playNextInQueue(targetTabId, { navigationMode: "content" }, signal);
+    await playNextInQueue(targetTabId, signal);
     throwIfAborted(signal);
     sendResponse({ success: true, count: playbackQueue.length, mode: request.mode });
   } catch (error) {
@@ -1300,7 +1220,7 @@ async function handleShufflePlaylist(
       return;
     }
     log("Shuffle started", { mode: "playlist", count: playbackQueue.length, tabId: activeTabId });
-    await playNextInQueue(targetTabId, { navigationMode: "content" }, signal);
+    await playNextInQueue(targetTabId, signal);
     throwIfAborted(signal);
     sendResponse({ success: true, count: playbackQueue.length, mode: "playlist", title: playlistData.title });
   } catch (error) {
@@ -1413,7 +1333,7 @@ async function handleShufflePlaylists(
       return;
     }
     log("Shuffle started", { mode: "playlists", playlists: playlistUris.length, count: playbackQueue.length, tabId: activeTabId });
-    await playNextInQueue(targetTabId, { navigationMode: "content" }, signal);
+    await playNextInQueue(targetTabId, signal);
     throwIfAborted(signal);
     sendResponse({ success: true, count: playbackQueue.length, playlists: playlistUris.length, mode: "playlists" });
   } catch (error) {
@@ -1476,7 +1396,7 @@ chrome.runtime.onMessage.addListener((req: RuntimeRequest, sender, sendResponse)
         return;
       }
       if (activeTabId === null) activeTabId = senderTabId;
-      const result = await playQueueIndex(senderTabId, Number(req?.index), "content");
+      const result = await playQueueIndex(senderTabId, Number(req?.index));
       sendResponse(result);
     })().catch((e) => sendResponse({ ok: false, error: e?.message || String(e) }));
     return true;
@@ -1534,7 +1454,7 @@ chrome.runtime.onMessage.addListener((req: RuntimeRequest, sender, sendResponse)
       await notifyActiveTabState();
       if (currentIndex < playbackQueue.length) {
         const tabId = resolveTargetTabId(senderTabId, activeTabId);
-        await playNextInQueue(tabId, { navigationMode: "content" });
+        await playNextInQueue(tabId);
       }
     })()
       .then(() => sendResponse({ ok: true }))
@@ -1543,15 +1463,6 @@ chrome.runtime.onMessage.addListener((req: RuntimeRequest, sender, sendResponse)
         sendResponse({ ok: false, error: e?.message || String(e) });
       });
     return true;
-  }
-
-  if (req?.type === "NAVIGATE_REQUEST" && req.permalink) {
-    const senderTabId = sender?.tab?.id;
-    if (!isFromActiveTab(senderTabId)) return false;
-    const tabId = resolveTargetTabId(senderTabId, activeTabId);
-    if (tabId) {
-      chrome.tabs.update(tabId, { url: req.permalink });
-    }
   }
 
   if (req?.type === "SKIP_NEXT") {
@@ -1569,7 +1480,7 @@ chrome.runtime.onMessage.addListener((req: RuntimeRequest, sender, sendResponse)
         await commitPlaybackPosition(Math.min(currentIndex + 1, playbackQueue.length - 1));
         markAdvanced();
         await notifyActiveTabState();
-        await playNextInQueue(resolveTargetTabId(senderTabId, activeTabId), { navigationMode: "content" });
+        await playNextInQueue(resolveTargetTabId(senderTabId, activeTabId));
       }
     })()
       .then(() => sendResponse({ ok: true }))
@@ -1595,7 +1506,7 @@ chrome.runtime.onMessage.addListener((req: RuntimeRequest, sender, sendResponse)
         await commitPlaybackPosition(Math.max(currentIndex - 1, 0));
         markAdvanced();
         await notifyActiveTabState();
-        await playNextInQueue(resolveTargetTabId(senderTabId, activeTabId), { navigationMode: "content" });
+        await playNextInQueue(resolveTargetTabId(senderTabId, activeTabId));
       }
     })()
       .then(() => sendResponse({ ok: true }))
